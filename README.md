@@ -1,31 +1,41 @@
-# 🌡️ Heatstroke
+<div align="center">
+  <h1>🌡️ Heatstroke</h1>
+  <p>A macOS background agent that catches runaway processes before they drain your battery</p>
+</div>
 
-Heatstroke is a macOS background agent that watches for runaway processes and alerts you before they silently drain your battery.
+<hr />
 
-When a process sustains high CPU for ~3 minutes, you get a native notification with a **click-to-kill** action. It auto-dismisses when the process cools down.
+A single Tailwind CSS language server silently pegged at 100% CPU for 30 minutes cost me 21% battery. Activity Monitor was closed, and I had no idea.
 
----
+Heatstroke fixes that. It runs quietly in the background, and when a process has been running too hot for too long, you get a native macOS notification with a **click-to-kill** action. When the process cools down, the notification auto-dismisses.
 
-## How it works
+<br />
+<div align="center">
+  <table>
+    <tr>
+      <th>🔍 Detect</th>
+      <th>🔔 Notify</th>
+      <th>💀 Kill</th>
+    </tr>
+    <tr>
+      <td>Samples CPU every 60s<br/>Flags anything above 80%<br/>for 3+ consecutive checks</td>
+      <td>Native macOS notification<br/>with process name, PID,<br/>and CPU percentage</td>
+      <td>Click the notification<br/>to kill the process.<br/>Re-notifies every 5 min</td>
+    </tr>
+  </table>
+</div>
+<br />
 
-Heatstroke runs every 60 seconds via `launchd`. Each run it:
-
-1. Samples CPU usage across all processes with `ps`
-2. Tracks which PIDs have been above **80% CPU** across consecutive checks
-3. After **3 consecutive checks** (~3 min), sends a notification
-4. Re-notifies every **5 minutes** if the process is still hot
-5. Dismisses the notification automatically when CPU drops
-
-System processes (`WindowServer`, `mds`, `launchd`, etc.) are ignored entirely.
-
----
+System processes (`WindowServer`, `mds`, `launchd`, etc.) are automatically ignored.
 
 ## Requirements
 
 - macOS
-- [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) — for rich click-to-kill notifications (`brew install terminal-notifier`)
+- [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) for rich click-to-kill notifications
 
----
+  ```sh
+  brew install terminal-notifier
+  ```
 
 ## Installation
 
@@ -35,9 +45,11 @@ cd heatstroke
 make install
 ```
 
----
+That's it. It runs at login and checks every 60 seconds.
 
-## Usage
+## Commands
+
+Run `make` to see all available commands:
 
 ```
   install      Symlink plist and load the launch agent
@@ -50,27 +62,23 @@ make install
   test         Run the test suite
 ```
 
----
-
 ## Configuration
 
-Edit the constants at the top of `heatstroke.sh`:
+Edit the top of [`heatstroke.sh`](heatstroke.sh):
 
 | Variable | Default | Description |
 |---|---|---|
 | `CPU_THRESHOLD` | `80` | % CPU to consider "high" |
-| `NOTIFY_AFTER` | `3` | Consecutive checks before first notification |
-| `RE_NOTIFY_INTERVAL` | `5` | Re-notify every N checks if still hot |
+| `NOTIFY_AFTER` | `3` | Consecutive checks before first notification (~3 min) |
+| `RE_NOTIFY_INTERVAL` | `5` | Re-notify every N checks if still hot (~5 min) |
 
-After changing, run `make restart`.
-
----
+Then `make restart`.
 
 ## Logs
 
 ```sh
 make log
-# or directly: ~/.local/state/heatstroke/watchdog.log
+# ~/.local/state/heatstroke/watchdog.log
 ```
 
-Logs are auto-rotated at 1MB.
+Auto-rotated at 1MB. Entries include `NOTIFY`, `RE-NOTIFY`, and `RESOLVED` events.
