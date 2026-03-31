@@ -5,9 +5,9 @@
 
 <hr />
 
-A single Tailwind CSS language server silently pegged at 100% CPU for 30 minutes cost me 21% battery. Activity Monitor was closed, and I had no idea.
+Runaway processes silently pegging your CPU at 100% can drain your battery in no time — and you'll never notice with Activity Monitor closed.
 
-Heatstroke fixes that. It runs quietly in the background, and when a process has been running too hot for too long, you get a native macOS notification with a **click-to-kill** action. When the process cools down, the notification auto-dismisses.
+Heatstroke runs quietly in the background, and when a process has been running too hot for too long, you get a native macOS notification with a **click-to-kill** action. When the process cools down, the notification auto-dismisses.
 
 <br />
 <div align="center">
