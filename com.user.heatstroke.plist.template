@@ -6,7 +6,7 @@
     <string>com.user.heatstroke</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/brett/src/personal/heatstroke/heatstroke.sh</string>
+        <string>__SCRIPT_PATH__</string>
     </array>
     <key>StartInterval</key>
     <integer>60</integer>

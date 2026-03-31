@@ -1,12 +1,13 @@
 PLIST_NAME  = com.user.heatstroke.plist
-PLIST_SRC   = $(shell pwd)/$(PLIST_NAME)
 PLIST_DEST  = $(HOME)/Library/LaunchAgents/$(PLIST_NAME)
+SCRIPT_PATH = $(shell pwd)/heatstroke.sh
 LOG_FILE    = $(HOME)/.local/state/heatstroke/watchdog.log
 
 .PHONY: install uninstall start stop restart status log test
 
-install: ## Symlink plist and load the launch agent
-	ln -sf "$(PLIST_SRC)" "$(PLIST_DEST)"
+install: ## Generate plist, install, and load the launch agent
+	launchctl unload "$(PLIST_DEST)" 2>/dev/null || true
+	@sed 's|__SCRIPT_PATH__|$(SCRIPT_PATH)|g' com.user.heatstroke.plist.template > "$(PLIST_DEST)"
 	launchctl load "$(PLIST_DEST)"
 	@echo "Heatstroke installed and running."
 
