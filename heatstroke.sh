@@ -161,8 +161,10 @@ if [[ -n "$hot_processes" ]]; then
     prev_count=$(state_lookup "$prev_state" "$pid" "count")
     prev_name=$(state_lookup "$prev_state" "$pid" "name")
 
-    # Default to 0 if no previous entry
-    [[ -z "$prev_count" ]] && prev_count=0
+    # Default to 0 if no previous entry or if state file is corrupted
+    if [[ -z "$prev_count" ]] || ! [[ "$prev_count" =~ ^[0-9]+$ ]]; then
+      prev_count=0
+    fi
 
     # If PID was reused by a different process, reset counter
     if [[ -n "$prev_name" && "$prev_name" != "$name" ]]; then
