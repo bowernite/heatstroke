@@ -2,17 +2,27 @@ PLIST_NAME  = com.user.heatstroke.plist
 PLIST_DEST  = $(HOME)/Library/LaunchAgents/$(PLIST_NAME)
 SCRIPT_PATH = $(shell pwd)/heatstroke.sh
 LOG_FILE    = $(HOME)/.local/state/heatstroke/watchdog.log
+APP_SRC     = $(shell pwd)/Heatstroke.app
+APP_DEST    = $(HOME)/Applications/Heatstroke.app
 
-.PHONY: install uninstall start stop restart status log test
+.PHONY: install uninstall start stop restart status log test app
 
-install: ## Generate plist, install, and load the launch agent
+app: ## Build the stub Heatstroke.app (icon + bundle ID for notifications)
+	@bash create-app-icon.sh
+
+install: app ## Build app, install, and load the launch agent
 	launchctl unload "$(PLIST_DEST)" 2>/dev/null || true
+	@rm -rf "$(APP_DEST)"
+	@cp -R "$(APP_SRC)" "$(APP_DEST)"
+	@/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$(APP_DEST)"
+	@echo "Installed Heatstroke.app to ~/Applications"
 	@sed 's|__SCRIPT_PATH__|$(SCRIPT_PATH)|g' com.user.heatstroke.plist.template > "$(PLIST_DEST)"
 	launchctl load "$(PLIST_DEST)"
 	@echo "Heatstroke installed and running."
 
-uninstall: stop ## Unload and remove the launch agent
+uninstall: stop ## Unload and remove the launch agent and app
 	rm -f "$(PLIST_DEST)"
+	rm -rf "$(APP_DEST)"
 	@echo "Heatstroke uninstalled."
 
 start: ## Load the launch agent

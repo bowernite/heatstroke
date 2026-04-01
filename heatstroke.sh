@@ -71,8 +71,20 @@ send_notification() {
   local pid="$1" name="$2" cpu="$3" duration_min="$4"
 
   # Name is already sanitized at collection time (alphanumeric, dash, underscore, dot, space only)
-  if command -v terminal-notifier &>/dev/null; then
+  # Use our bundled Heatstroke.app (a rebranded terminal-notifier) so
+  # notifications show the custom icon and "Heatstroke" app name.
+  local notifier="${HOME}/Applications/Heatstroke.app/Contents/MacOS/terminal-notifier"
+  if [[ -x "$notifier" ]]; then
     # Verify process name still matches before killing to guard against PID reuse
+    "$notifier" \
+      -title "Heatstroke" \
+      -subtitle "${name} (PID ${pid}) — ${cpu}% CPU" \
+      -message "High CPU for ~${duration_min} min. Click to kill." \
+      -execute "bash -c 'cur=\$(ps -p ${pid} -o comm= 2>/dev/null); [[ \"\${cur##*/}\" == \"${name}\" ]] && kill ${pid}'" \
+      -group "heatstroke-${pid}" \
+      -sound default \
+      2>/dev/null || true
+  elif command -v terminal-notifier &>/dev/null; then
     terminal-notifier \
       -title "Heatstroke" \
       -subtitle "${name} (PID ${pid}) — ${cpu}% CPU" \
@@ -80,7 +92,6 @@ send_notification() {
       -execute "bash -c 'cur=\$(ps -p ${pid} -o comm= 2>/dev/null); [[ \"\${cur##*/}\" == \"${name}\" ]] && kill ${pid}'" \
       -group "heatstroke-${pid}" \
       -sound default \
-      -sender com.apple.ActivityMonitor \
       2>/dev/null || true
   else
     osascript -e "display notification \"${name} (PID ${pid}) at ${cpu}% for ~${duration_min} min\" with title \"Heatstroke\"" 2>/dev/null || true
@@ -196,7 +207,10 @@ if [[ -n "$prev_state" ]]; then
 
     if [[ -z "$still_hot" && "$prev_count" -ge "$NOTIFY_AFTER" ]]; then
       log "RESOLVED: ${prev_name} (PID ${pid}) dropped below threshold after ~${prev_count} min"
-      if command -v terminal-notifier &>/dev/null; then
+      local notifier="${HOME}/Applications/Heatstroke.app/Contents/MacOS/terminal-notifier"
+      if [[ -x "$notifier" ]]; then
+        "$notifier" -remove "heatstroke-${pid}" 2>/dev/null || true
+      elif command -v terminal-notifier &>/dev/null; then
         terminal-notifier -remove "heatstroke-${pid}" 2>/dev/null || true
       fi
     fi

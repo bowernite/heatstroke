@@ -47,13 +47,16 @@ make install
 
 That's it. It runs at login and checks every 60 seconds.
 
+`make install` builds a custom `Heatstroke.app` (a rebranded `terminal-notifier` with a 🌡️ icon) and installs it to `~/Applications`, so notifications show up as "Heatstroke" with their own icon in Notification Center.
+
 ## Commands
 
 Run `make` to see all available commands:
 
 ```
-  install      Symlink plist and load the launch agent
-  uninstall    Unload and remove the launch agent
+  app          Build the stub Heatstroke.app (icon + bundle ID for notifications)
+  install      Build app, install, and load the launch agent
+  uninstall    Unload and remove the launch agent and app
   start        Load the launch agent
   stop         Unload the launch agent
   restart      Restart the launch agent
