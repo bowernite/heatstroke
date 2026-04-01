@@ -26,6 +26,8 @@ mkdir -p "$ICONSET_DIR"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.user.heatstroke.app" "${APP_DIR}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName Heatstroke" "${APP_DIR}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "${APP_DIR}/Contents/Info.plist"
+# Remove inherited ATS exception — Heatstroke makes no network requests
+/usr/libexec/PlistBuddy -c "Delete :NSAppTransportSecurity" "${APP_DIR}/Contents/Info.plist" 2>/dev/null || true
 
 # Render the thermometer emoji at each required iconset size via Swift
 swift - "$ICONSET_DIR" <<'SWIFT'
