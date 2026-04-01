@@ -31,7 +31,7 @@ System processes (`WindowServer`, `mds`, `launchd`, etc.) are automatically igno
 ## Requirements
 
 - macOS
-- [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) for rich click-to-kill notifications
+- [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) (optional, recommended) — enables rich click-to-kill notifications. Without it, Heatstroke falls back to basic macOS notifications via `osascript` (no click-to-kill).
 
   ```sh
   brew install terminal-notifier
