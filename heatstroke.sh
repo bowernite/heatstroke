@@ -207,7 +207,7 @@ if [[ -n "$prev_state" ]]; then
 
     if [[ -z "$still_hot" && "$prev_count" -ge "$NOTIFY_AFTER" ]]; then
       log "RESOLVED: ${prev_name} (PID ${pid}) dropped below threshold after ~${prev_count} min"
-      local notifier="${HOME}/Applications/Heatstroke.app/Contents/MacOS/terminal-notifier"
+      notifier="${HOME}/Applications/Heatstroke.app/Contents/MacOS/terminal-notifier"
       if [[ -x "$notifier" ]]; then
         "$notifier" -remove "heatstroke-${pid}" 2>/dev/null || true
       elif command -v terminal-notifier &>/dev/null; then

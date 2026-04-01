@@ -102,7 +102,7 @@ EOF
   chmod +x "$TEST_DIR/bin/terminal-notifier"
 
   # Run watchdog with overridden HOME and PATH
-  HOME="$TEST_DIR/home" PATH="$TEST_DIR/bin:/usr/bin:/bin" bash "$WATCHDOG" 2>/dev/null || true
+  HOME="$TEST_DIR/home" PATH="$TEST_DIR/bin:/usr/bin:/bin" bash "$WATCHDOG"
 }
 
 get_state() {
@@ -240,6 +240,9 @@ run_watchdog "$MOCK_PS_HOT"
 run_watchdog "$MOCK_PS_HOT"
 run_watchdog "$MOCK_PS_HOT"
 run_watchdog "$MOCK_PS_COLD"
+
+state=$(get_state)
+assert_eq "State cleared after CPU drops below threshold" "" "$state"
 
 log=$(get_log)
 assert_contains "RESOLVED logged" "$log" "RESOLVED: MyApp"
