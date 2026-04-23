@@ -23,6 +23,7 @@ LOG_FILE="${STATE_DIR}/watchdog.log"
 
 # System processes that routinely spike and should be ignored entirely.
 IGNORE_LIST="
+# Core OS / window server
 kernel_task
 WindowServer
 launchd
@@ -45,16 +46,77 @@ coreaudiod
 corebrightnessd
 watchdogd
 logd
+runningboardd
+launchservicesd
+
+# Spotlight / indexing — spike during re-index, after OS updates, on new drives
 mds
 mds_stores
 mdworker_shared
-runningboardd
-launchservicesd
+mdworker
+corespotlightd
+spotlightknowledged
+
+# Photos / media analysis — spike for hours during large imports or after OS upgrades
+# Note: mediaanalysisd has a history of Apple bugs that keep it pegged for days;
+# if duration-aware alerting is ever added, it would be a good candidate to revisit.
+mediaanalysisd
+photoanalysisd
+photolibraryd
+cloudphotod
+
+# iCloud / sync — spike after returning from offline, on large iCloud libraries
+bird
+cloudd
+nsurlsessiond
+nsurlstoraged
+accountsd
+
+# Software updates / installation — spike during download, staging, and install
+softwareupdated
+installd
+mobileassetd
+idleassetsd
+storeaccountd
+
+# Security / Gatekeeper / XProtect — run on schedule or on every new app launch
+XProtectService
+XProtectRemediator
+syspolicyd
+amfid
+secd
+
+# Siri / speech / on-device ML — spike on Siri use, dictation, and model updates
+assistantd
+corespeechd
+suggestd
+triald
+intelligenceplatformd
+neuralengined
+
+# Network / discovery
 bluetoothd
-trustd
 airportd
+mDNSResponder
+networkd
+netbiosd
+trustd
+
+# Time Machine / backup — run hourly, heavy on first backup
+backupd
+backupd-helper
+
+# Other system services
 symptomsd
 thermalmonitord
+locationd
+rapportd
+distnoted
+sharingd
+diskimagesiod
+sandboxd
+revisiond
+oahd
 "
 
 # --- Helpers ---
