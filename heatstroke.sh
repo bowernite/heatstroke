@@ -106,6 +106,14 @@ trustd
 backupd
 backupd-helper
 
+# Video conferencing — pegs CPU during calls (video encode/decode, virtual
+# backgrounds, screen share). Expected and non-actionable; you won't kill it
+# mid-meeting. A genuinely-stuck Zoom won't alert — see notes for the tradeoff.
+zoom.us
+aomhost
+CptHost
+caphost
+
 # Other system services
 symptomsd
 thermalmonitord

@@ -1,7 +1,9 @@
 # macOS System Processes — Ignore List Research
 
-Notes on why each category of Apple daemon is excluded from Heatstroke alerts.
+Notes on why each category of process is excluded from Heatstroke alerts.
 These processes spike during normal operations and are not actionable by the user.
+Mostly Apple daemons, plus a small number of third-party apps that legitimately
+peg the CPU as part of normal use (see Video Conferencing).
 
 ---
 
@@ -121,3 +123,18 @@ These are scheduled or event-triggered and don't sustain high CPU for long under
 | `sandboxd` | Sandbox policy enforcement — evaluates violations; spikes on new app launches |
 | `revisiond` | Document version history for NSDocument-based apps (Pages, TextEdit, etc.) |
 | `oahd` | Rosetta 2 translation daemon (Apple silicon only) — AOT x86→ARM translation on first Intel binary run |
+
+---
+
+## Video Conferencing (third-party)
+
+| Process | Role |
+|---|---|
+| `zoom.us` | Zoom main app — sustains high CPU during any call from real-time video encode/decode |
+| `aomhost` | Zoom virtual-background / video-processing host; documented at 90%+ CPU whenever a virtual background is active [[source](https://devforum.zoom.us/t/sporadic-cpu-spike-from-aomhost/30905)] |
+| `CptHost` | Zoom content/screen-share capture host — spikes while sharing your screen |
+| `caphost` | Zoom camera capture host |
+
+Zoom routinely pegs one or more cores for the entire duration of a call. This is normal, expected work — not a runaway — and it is not actionable: you are not going to click-to-kill Zoom in the middle of a meeting. Before this exclusion, a single hour-long call generated a steady stream of NOTIFY/RE-NOTIFY/RESOLVED noise as the main process bounced across the 80% threshold. [[source](https://allthings.how/zoom-cpu-usage-fix/)]
+
+> **Tradeoff:** ignoring Zoom outright means a genuinely-stuck Zoom (e.g. wedged at 100% after a call has ended — a known class of Zoom bug) will no longer alert. The false-positive cost of alerting on every call far outweighs that rare case, and a wedged Zoom is usually obvious (fans). As with `mediaanalysisd`, duration-aware alerting ("still hot 2 hours after the last call") would be the better long-term fix and would let these be re-examined.

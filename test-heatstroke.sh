@@ -281,12 +281,16 @@ run_watchdog "  PID  %CPU COMM
     1  99.0 /sbin/launchd
   200  99.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds
   300  99.0 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock
-  400  99.0 /Applications/MyApp.app/Contents/MacOS/MyApp"
+  400  99.0 /Applications/MyApp.app/Contents/MacOS/MyApp
+  500  99.0 /Applications/zoom.us.app/Contents/MacOS/zoom.us
+  600  99.0 /Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
 
 state=$(get_state)
 assert_not_contains "launchd not tracked" "$state" "launchd"
 assert_not_contains "mds not tracked" "$state" "mds"
 assert_not_contains "Dock not tracked" "$state" "Dock"
+assert_not_contains "zoom.us not tracked" "$state" "zoom.us"
+assert_not_contains "aomhost not tracked" "$state" "aomhost"
 assert_contains "MyApp is tracked" "$state" "400 1 MyApp"
 
 
