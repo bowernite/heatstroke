@@ -136,10 +136,10 @@ get_notifications() {
 # ============================================================
 setup_test "No high-CPU processes"
 
-run_watchdog "  PID  %CPU COMM
-    1   0.0 /sbin/launchd
-  500   2.3 /usr/bin/something
-  800  10.0 /Applications/Safari.app/Contents/MacOS/Safari"
+run_watchdog "  PID  PPID  %CPU COMM
+    1     1   0.0 /sbin/launchd
+  500     1   2.3 /usr/bin/something
+  800     1  10.0 /Applications/Safari.app/Contents/MacOS/Safari"
 
 state=$(get_state)
 assert_eq "State is empty" "" "$state"
@@ -150,13 +150,13 @@ assert_eq "State is empty" "" "$state"
 # ============================================================
 setup_test "One high-CPU process appears"
 
-run_watchdog "  PID  %CPU COMM
-    1   0.0 /sbin/launchd
-12345  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp
-  800  10.0 /usr/bin/other"
+run_watchdog "  PID  PPID  %CPU COMM
+    1     1   0.0 /sbin/launchd
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp
+  800     1  10.0 /usr/bin/other"
 
 state=$(get_state)
-assert_contains "State tracks PID 12345" "$state" "12345 1 MyApp"
+assert_contains "State tracks PID 12345" "$state" "12345 1 0 MyApp"
 
 
 # ============================================================
@@ -164,40 +164,41 @@ assert_contains "State tracks PID 12345" "$state" "12345 1 MyApp"
 # ============================================================
 setup_test "Counter increments across consecutive runs"
 
-MOCK_PS="  PID  %CPU COMM
-12345  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
+MOCK_PS="  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
 
 run_watchdog "$MOCK_PS"
 state=$(get_state)
-assert_contains "Count=1 after first run" "$state" "12345 1 MyApp"
+assert_contains "Count=1 after first run" "$state" "12345 1 0 MyApp"
 
 run_watchdog "$MOCK_PS"
 state=$(get_state)
-assert_contains "Count=2 after second run" "$state" "12345 2 MyApp"
+assert_contains "Count=2 after second run" "$state" "12345 2 0 MyApp"
 
 run_watchdog "$MOCK_PS"
 state=$(get_state)
-assert_contains "Count=3 after third run" "$state" "12345 3 MyApp"
+assert_contains "Count=3 after third run" "$state" "12345 3 0 MyApp"
 
 
 # ============================================================
-# TEST 4: Notification sent at NOTIFY_AFTER threshold (count=3)
+# TEST 4: Notification sent after 15 hot minutes
 # ============================================================
-setup_test "Notification at threshold"
+setup_test "Notification after 15 hot minutes"
 
-MOCK_PS="  PID  %CPU COMM
-12345  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
+MOCK_PS="  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
 
-run_watchdog "$MOCK_PS"
+for i in $(seq 1 14); do
+  run_watchdog "$MOCK_PS"
+done
+
+notifs=$(get_notifications)
+assert_eq "No notification after 14 min" "" "$notifs"
+
 run_watchdog "$MOCK_PS"
 
 notifs=$(get_notifications)
-assert_eq "No notification before threshold" "" "$notifs"
-
-run_watchdog "$MOCK_PS"
-
-notifs=$(get_notifications)
-assert_contains "Notification sent at count=3" "$notifs" "NOTIFICATION:"
+assert_contains "Notification sent at 15 min" "$notifs" "NOTIFICATION:"
 assert_contains "Notification mentions PID" "$notifs" "12345"
 
 log=$(get_log)
@@ -205,47 +206,83 @@ assert_contains "Log has NOTIFY entry" "$log" "NOTIFY:"
 
 
 # ============================================================
-# TEST 5: Re-notification at correct interval
+# TEST 5: One notification per episode, however long it runs
 # ============================================================
-setup_test "Re-notification interval"
+setup_test "One notification per episode"
 
-MOCK_PS="  PID  %CPU COMM
-12345  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
+MOCK_PS="  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
 
-# Run 8 times: notify at 3, re-notify at 8 (3 + 5)
-for i in $(seq 1 8); do
+for i in $(seq 1 40); do
   run_watchdog "$MOCK_PS"
 done
 
 notifs=$(get_notifications)
 notif_count=$(echo "$notifs" | grep -c "NOTIFICATION:" || true)
-assert_eq "Two notifications (initial + re-notify)" "2" "$notif_count"
+assert_eq "One notification over 40 hot minutes" "1" "$notif_count"
+
+
+# ============================================================
+# TEST 6: Two cool readings in a row -> RESOLVED
+# ============================================================
+setup_test "Process resolved after two cool readings"
+
+MOCK_PS_HOT="  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
+
+MOCK_PS_COLD="  PID  PPID  %CPU COMM
+12345     1   5.0 /Applications/MyApp.app/Contents/MacOS/MyApp"
+
+for i in $(seq 1 15); do
+  run_watchdog "$MOCK_PS_HOT"
+done
+run_watchdog "$MOCK_PS_COLD"
 
 log=$(get_log)
-assert_contains "Log has RE-NOTIFY" "$log" "RE-NOTIFY:"
+assert_not_contains "Not resolved after one cool reading" "$log" "RESOLVED:"
 
-
-# ============================================================
-# TEST 6: Process drops off -> RESOLVED log entry
-# ============================================================
-setup_test "Process resolved when CPU drops"
-
-MOCK_PS_HOT="  PID  %CPU COMM
-12345  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
-
-MOCK_PS_COLD="  PID  %CPU COMM
-12345   5.0 /Applications/MyApp.app/Contents/MacOS/MyApp"
-
-run_watchdog "$MOCK_PS_HOT"
-run_watchdog "$MOCK_PS_HOT"
-run_watchdog "$MOCK_PS_HOT"
 run_watchdog "$MOCK_PS_COLD"
 
 state=$(get_state)
-assert_eq "State cleared after CPU drops below threshold" "" "$state"
+assert_eq "State cleared after two cool readings" "" "$state"
 
 log=$(get_log)
 assert_contains "RESOLVED logged" "$log" "RESOLVED: MyApp"
+notifs=$(get_notifications)
+assert_contains "Notification removed" "$notifs" "-remove heatstroke-12345"
+
+
+# ============================================================
+# TEST 6b: One cool reading doesn't start a new episode
+# ============================================================
+setup_test "One cool reading keeps the episode going"
+
+MOCK_PS_HOT="  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
+
+MOCK_PS_COLD="  PID  PPID  %CPU COMM
+12345     1   5.0 /Applications/MyApp.app/Contents/MacOS/MyApp"
+
+for i in $(seq 1 10); do
+  run_watchdog "$MOCK_PS_HOT"
+done
+run_watchdog "$MOCK_PS_COLD"
+for i in $(seq 1 5); do
+  run_watchdog "$MOCK_PS_HOT"
+done
+
+notifs=$(get_notifications)
+notif_count=$(echo "$notifs" | grep -c "NOTIFICATION:" || true)
+assert_eq "Notified after 15 hot readings despite a dip" "1" "$notif_count"
+
+run_watchdog "$MOCK_PS_COLD"
+for i in $(seq 1 20); do
+  run_watchdog "$MOCK_PS_HOT"
+done
+
+notifs=$(get_notifications)
+notif_count=$(echo "$notifs" | grep -c "NOTIFICATION:" || true)
+assert_eq "No second notification after another dip" "1" "$notif_count"
 
 
 # ============================================================
@@ -253,23 +290,23 @@ assert_contains "RESOLVED logged" "$log" "RESOLVED: MyApp"
 # ============================================================
 setup_test "PID reuse resets counter"
 
-MOCK_PS_A="  PID  %CPU COMM
-12345  95.3 /Applications/AppA.app/Contents/MacOS/AppA"
+MOCK_PS_A="  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/AppA.app/Contents/MacOS/AppA"
 
-MOCK_PS_B="  PID  %CPU COMM
-12345  95.3 /Applications/AppB.app/Contents/MacOS/AppB"
+MOCK_PS_B="  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/AppB.app/Contents/MacOS/AppB"
 
 run_watchdog "$MOCK_PS_A"
 run_watchdog "$MOCK_PS_A"
 
 state=$(get_state)
-assert_contains "AppA at count 2" "$state" "12345 2 AppA"
+assert_contains "AppA at count 2" "$state" "12345 2 0 AppA"
 
 # Same PID, different name -> counter resets to 1
 run_watchdog "$MOCK_PS_B"
 
 state=$(get_state)
-assert_contains "AppB at count 1 (reset)" "$state" "12345 1 AppB"
+assert_contains "AppB at count 1 (reset)" "$state" "12345 1 0 AppB"
 
 
 # ============================================================
@@ -277,13 +314,13 @@ assert_contains "AppB at count 1 (reset)" "$state" "12345 1 AppB"
 # ============================================================
 setup_test "Ignored processes filtered"
 
-run_watchdog "  PID  %CPU COMM
-    1  99.0 /sbin/launchd
-  200  99.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds
-  300  99.0 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock
-  400  99.0 /Applications/MyApp.app/Contents/MacOS/MyApp
-  500  99.0 /Applications/zoom.us.app/Contents/MacOS/zoom.us
-  600  99.0 /Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+run_watchdog "  PID  PPID  %CPU COMM
+    1     1  99.0 /sbin/launchd
+  200     1  99.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds
+  300     1  99.0 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock
+  400     1  99.0 /Applications/MyApp.app/Contents/MacOS/MyApp
+  500     1  99.0 /Applications/zoom.us.app/Contents/MacOS/zoom.us
+  600     1  99.0 /Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
 
 state=$(get_state)
 assert_not_contains "launchd not tracked" "$state" "launchd"
@@ -291,7 +328,7 @@ assert_not_contains "mds not tracked" "$state" "mds"
 assert_not_contains "Dock not tracked" "$state" "Dock"
 assert_not_contains "zoom.us not tracked" "$state" "zoom.us"
 assert_not_contains "aomhost not tracked" "$state" "aomhost"
-assert_contains "MyApp is tracked" "$state" "400 1 MyApp"
+assert_contains "MyApp is tracked" "$state" "400 1 0 MyApp"
 
 
 # ============================================================
@@ -299,14 +336,14 @@ assert_contains "MyApp is tracked" "$state" "400 1 MyApp"
 # ============================================================
 setup_test "Multiple hot processes"
 
-run_watchdog "  PID  %CPU COMM
-  100  95.0 /usr/bin/processA
-  200  88.0 /usr/bin/processB
-  300  50.0 /usr/bin/cool_process"
+run_watchdog "  PID  PPID  %CPU COMM
+  100     1  95.0 /usr/bin/processA
+  200     1  88.0 /usr/bin/processB
+  300     1  50.0 /usr/bin/cool_process"
 
 state=$(get_state)
-assert_contains "processA tracked" "$state" "100 1 processA"
-assert_contains "processB tracked" "$state" "200 1 processB"
+assert_contains "processA tracked" "$state" "100 1 0 processA"
+assert_contains "processB tracked" "$state" "200 1 0 processB"
 assert_not_contains "cool_process not tracked (below threshold)" "$state" "cool_process"
 
 
@@ -318,11 +355,11 @@ setup_test "Empty state file"
 mkdir -p "$STATE_DIR"
 printf '' > "$STATE_FILE"
 
-run_watchdog "  PID  %CPU COMM
-12345  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
+run_watchdog "  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
 
 state=$(get_state)
-assert_contains "Recovers from empty state" "$state" "12345 1 MyApp"
+assert_contains "Recovers from empty state" "$state" "12345 1 0 MyApp"
 
 
 # ============================================================
@@ -333,12 +370,12 @@ setup_test "State dir created automatically"
 # Don't pre-create it — the script should mkdir -p
 rm -rf "$TEST_DIR/home/.local"
 
-run_watchdog "  PID  %CPU COMM
-12345  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
+run_watchdog "  PID  PPID  %CPU COMM
+12345     1  95.3 /Applications/MyApp.app/Contents/MacOS/MyApp"
 
 assert_file_exists "State file created" "$STATE_FILE"
 state=$(get_state)
-assert_contains "State written correctly" "$state" "12345 1 MyApp"
+assert_contains "State written correctly" "$state" "12345 1 0 MyApp"
 
 
 # ============================================================
@@ -356,8 +393,8 @@ done
 
 original_size=$(wc -c < "$LOG_FILE" | tr -d ' ')
 
-run_watchdog "  PID  %CPU COMM
-    1   0.0 /sbin/launchd"
+run_watchdog "  PID  PPID  %CPU COMM
+    1     1   0.0 /sbin/launchd"
 
 new_size=$(wc -c < "$LOG_FILE" | tr -d ' ')
 if [[ "$new_size" -lt "$original_size" ]]; then
@@ -375,8 +412,8 @@ assert_contains "Log rotation noted" "$log" "Log rotated"
 # ============================================================
 setup_test "Name sanitization strips special chars"
 
-run_watchdog "  PID  %CPU COMM
-12345  95.3 /tmp/evil\"name\$here"
+run_watchdog "  PID  PPID  %CPU COMM
+12345     1  95.3 /tmp/evil\"name\$here"
 
 # The state should have the sanitized name
 state=$(get_state)
@@ -392,12 +429,12 @@ assert_not_contains "No dollar in state" "$state" '$'
 # ============================================================
 setup_test "CPU exactly at threshold"
 
-run_watchdog "  PID  %CPU COMM
-12345  80.0 /usr/bin/borderline"
+run_watchdog "  PID  PPID  %CPU COMM
+12345     1  80.0 /usr/bin/borderline"
 
 state=$(get_state)
 # 80 is NOT less than 80, so it should be tracked
-assert_contains "CPU=80 is tracked" "$state" "12345 1 borderline"
+assert_contains "CPU=80 is tracked" "$state" "12345 1 0 borderline"
 
 
 # ============================================================
@@ -405,11 +442,44 @@ assert_contains "CPU=80 is tracked" "$state" "12345 1 borderline"
 # ============================================================
 setup_test "CPU just below threshold"
 
-run_watchdog "  PID  %CPU COMM
-12345  79.9 /usr/bin/borderline"
+run_watchdog "  PID  PPID  %CPU COMM
+12345     1  79.9 /usr/bin/borderline"
 
 state=$(get_state)
 assert_eq "CPU=79 not tracked" "" "$state"
+
+
+# ============================================================
+# TEST 16: Processes started by a coding agent never alert
+# ============================================================
+setup_test "Agent descendants never alert"
+
+MOCK_PS="  PID  PPID  %CPU COMM
+  900     1   2.0 /Users/me/.local/bin/claude
+  901   900   0.0 /bin/zsh
+  902   901  99.0 /usr/bin/python3
+  910     1   1.0 /opt/homebrew/bin/codex
+  911   910  99.0 /usr/bin/yes
+  920     1   1.0 /Users/me/.local/bin/cursor-agent
+  921   920  99.0 /usr/local/bin/node
+  950     1  99.0 /usr/bin/perl
+  960     1   5.0 /Applications/Cursor.app/Contents/MacOS/Cursor
+  961   960   3.0 /Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)
+  962   961  99.0 /Users/me/project/node_modules/@biomejs/cli-darwin-arm64/biome"
+
+for i in $(seq 1 15); do
+  run_watchdog "$MOCK_PS"
+done
+
+notifs=$(get_notifications)
+assert_not_contains "No alert for claude's grandchild" "$notifs" "python3"
+assert_not_contains "No alert for codex's child" "$notifs" "yes (PID"
+assert_not_contains "No alert for cursor-agent's child" "$notifs" "node (PID"
+assert_contains "Alert for an orphan reparented to launchd" "$notifs" "perl (PID 950)"
+assert_contains "Alert for an editor extension's process" "$notifs" "biome (PID 962)"
+
+log=$(get_log)
+assert_contains "NOTIFY logs the parent chain" "$log" "NOTIFY: biome (PID 962) at 99.0% CPU for ~15 min; parents: Cursor Helper (Plugin)(961) < Cursor(960)"
 
 
 # ============================================================

@@ -4,8 +4,7 @@
 #
 # Runs every 60s via launchd. Tracks which PIDs sustain high CPU across
 # consecutive checks. Sends a notification (with click-to-kill) when a
-# process has been hot for NOTIFY_AFTER consecutive checks. Re-notifies
-# every RE_NOTIFY_INTERVAL checks so it doesn't get buried.
+# process has been hot for NOTIFY_AFTER consecutive checks, once per episode.
 #
 # Compatible with macOS default bash 3.2 (no associative arrays).
 
@@ -13,8 +12,8 @@ set -euo pipefail
 
 # --- Config ---
 CPU_THRESHOLD=80        # % CPU (ps decaying average) to consider "high"
-NOTIFY_AFTER=3          # consecutive checks before first notification (~3 min)
-RE_NOTIFY_INTERVAL=5    # re-notify every N checks if still high (~5 min)
+NOTIFY_AFTER=15         # hot checks before the episode's one notification (~15 min)
+COOL_READINGS_TOLERATED=1  # cool checks in a row that don't end an episode
 # Use per-user state dir to avoid symlink attacks in world-writable /tmp
 STATE_DIR="${HOME}/.local/state/heatstroke"
 mkdir -p "$STATE_DIR"
@@ -127,6 +126,14 @@ revisiond
 oahd
 "
 
+# Coding agents. Their descendants are deliberate work and never alert; a runaway left
+# behind when the agent exits gets reparented to launchd, so it alerts as usual.
+AGENT_NAMES="
+claude
+codex
+cursor-agent
+"
+
 # --- Helpers ---
 
 log() {
@@ -135,6 +142,39 @@ log() {
 
 is_ignored() {
   echo "$IGNORE_LIST" | grep -qxF "$1"
+}
+
+# Prints "PID NAME" for each ancestor of a PID in the process snapshot, nearest first
+ancestors_of() {
+  echo "$process_snapshot" | awk -v target="$1" '
+    NR > 1 {
+      comm = $0
+      sub(/^ *[0-9]+ +[0-9]+ +[0-9.]+ +/, "", comm)
+      sub(/.*\//, "", comm)
+      parent[$1] = $2
+      name[$1] = comm
+    }
+    END {
+      pid = parent[target]
+      while (pid + 0 > 0 && !(pid in seen)) {
+        seen[pid] = 1
+        print pid, name[pid]
+        pid = parent[pid]
+      }
+    }'
+}
+
+# e.g. "Cursor Helper (Plugin)(961) < Cursor(960) < launchd(1)"
+parent_chain() {
+  ancestors_of "$1" | awk '{ pid = $1; $1 = ""; sub(/^ /, ""); printf "%s%s(%s)", (NR > 1 ? " < " : ""), $0, pid }'
+}
+
+started_by_agent() {
+  local ancestor
+  while read -r _ ancestor; do
+    [[ -n "$ancestor" ]] && echo "$AGENT_NAMES" | grep -qxF "$ancestor" && return 0
+  done <<< "$(ancestors_of "$1")"
+  return 1
 }
 
 send_notification() {
@@ -169,8 +209,7 @@ send_notification() {
 }
 
 # Lookup a value from state lines. Usage: state_lookup "$lines" "$pid" "field"
-# State line format: PID COUNT NAME
-# field: "count" returns field 2, "name" returns field 3+
+# State line format: PID COUNT COOL NAME (COUNT = hot readings this episode, COOL = cool readings in a row)
 state_lookup() {
   local lines="$1" pid="$2" field="$3"
   local line
@@ -181,8 +220,22 @@ state_lookup() {
   fi
   case "$field" in
     count) echo "$line" | awk '{print $2}' ;;
-    name)  echo "$line" | awk '{$1=""; $2=""; print}' | sed 's/^ *//' ;;
+    cool)  echo "$line" | awk '{print $3}' ;;
+    name)  echo "$line" | awk '{$1=""; $2=""; $3=""; print}' | sed 's/^ *//' ;;
   esac
+}
+
+append_state() {
+  if [[ -z "$new_state" ]]; then
+    new_state="$1"
+  else
+    new_state="${new_state}
+$1"
+  fi
+}
+
+is_number() {
+  [[ "$1" =~ ^[0-9]+$ ]]
 }
 
 # --- Read previous state ---
@@ -192,10 +245,12 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 
 # --- Get current high-CPU processes ---
+process_snapshot=$(ps -axo pid,ppid,pcpu,comm 2>/dev/null) || true
+
 # Collect into a newline-delimited string: "PID CPU NAME"
 hot_processes=""
 
-while read -r pid cpu comm; do
+while read -r pid ppid cpu comm; do
   [[ -z "$pid" || "$pid" == "PID" ]] && continue
 
   # Strip decimal from cpu (e.g., "95.3" -> "95")
@@ -209,6 +264,7 @@ while read -r pid cpu comm; do
   [[ -z "$name" ]] && continue
 
   is_ignored "$name" && continue
+  started_by_agent "$pid" && continue
 
   if [[ -z "$hot_processes" ]]; then
     hot_processes="${pid} ${cpu} ${name}"
@@ -216,7 +272,7 @@ while read -r pid cpu comm; do
     hot_processes="${hot_processes}
 ${pid} ${cpu} ${name}"
   fi
-done < <(ps -eo pid,pcpu,comm 2>/dev/null)
+done <<< "$process_snapshot"
 
 # --- Build new state and act ---
 new_state=""
@@ -232,9 +288,7 @@ if [[ -n "$hot_processes" ]]; then
     prev_name=$(state_lookup "$prev_state" "$pid" "name")
 
     # Default to 0 if no previous entry or if state file is corrupted
-    if [[ -z "$prev_count" ]] || ! [[ "$prev_count" =~ ^[0-9]+$ ]]; then
-      prev_count=0
-    fi
+    is_number "$prev_count" || prev_count=0
 
     # If PID was reused by a different process, reset counter
     if [[ -n "$prev_name" && "$prev_name" != "$name" ]]; then
@@ -242,42 +296,38 @@ if [[ -n "$hot_processes" ]]; then
     fi
 
     count=$((prev_count + 1))
-
-    if [[ -z "$new_state" ]]; then
-      new_state="${pid} ${count} ${name}"
-    else
-      new_state="${new_state}
-${pid} ${count} ${name}"
-    fi
+    append_state "${pid} ${count} 0 ${name}"
 
     if [[ "$count" -eq "$NOTIFY_AFTER" ]]; then
-      log "NOTIFY: ${name} (PID ${pid}) at ${cpu}% CPU for ~${count} min"
+      log "NOTIFY: ${name} (PID ${pid}) at ${cpu}% CPU for ~${count} min; parents: $(parent_chain "$pid")"
       send_notification "$pid" "$name" "$cpu" "$count"
-    elif [[ "$count" -gt "$NOTIFY_AFTER" ]]; then
-      since_first=$(( count - NOTIFY_AFTER ))
-      if [[ $(( since_first % RE_NOTIFY_INTERVAL )) -eq 0 ]]; then
-        log "RE-NOTIFY: ${name} (PID ${pid}) at ${cpu}% CPU for ~${count} min"
-        send_notification "$pid" "$name" "$cpu" "$count"
-      fi
     fi
   done <<< "$hot_processes"
 fi
 
-# Log when a tracked process drops off
+# Tracked processes that are cool now: keep them through a short dip, then resolve
 if [[ -n "$prev_state" ]]; then
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     pid=$(echo "$line" | awk '{print $1}')
-    prev_count=$(echo "$line" | awk '{print $2}')
-    prev_name=$(echo "$line" | awk '{$1=""; $2=""; print}' | sed 's/^ *//')
 
-    # Check if this PID is still in hot_processes
-    still_hot=""
-    if [[ -n "$hot_processes" ]]; then
-      still_hot=$(echo "$hot_processes" | grep "^${pid} " || true)
+    if [[ -n "$hot_processes" ]] && echo "$hot_processes" | grep -q "^${pid} "; then
+      continue
     fi
 
-    if [[ -z "$still_hot" && "$prev_count" -ge "$NOTIFY_AFTER" ]]; then
+    prev_count=$(state_lookup "$line" "$pid" "count")
+    prev_cool=$(state_lookup "$line" "$pid" "cool")
+    prev_name=$(state_lookup "$line" "$pid" "name")
+    is_number "$prev_count" || prev_count=0
+    is_number "$prev_cool" || prev_cool=0
+
+    cool=$((prev_cool + 1))
+    if [[ "$cool" -le "$COOL_READINGS_TOLERATED" ]]; then
+      append_state "${pid} ${prev_count} ${cool} ${prev_name}"
+      continue
+    fi
+
+    if [[ "$prev_count" -ge "$NOTIFY_AFTER" ]]; then
       log "RESOLVED: ${prev_name} (PID ${pid}) dropped below threshold after ~${prev_count} min"
       notifier="${HOME}/Applications/Heatstroke.app/Contents/MacOS/terminal-notifier"
       if [[ -x "$notifier" ]]; then
