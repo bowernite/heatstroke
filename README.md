@@ -18,15 +18,15 @@ Heatstroke runs quietly in the background, and when a process has been running t
       <th>💀 Kill</th>
     </tr>
     <tr>
-      <td>Samples CPU every 60s<br/>Flags anything above 80%<br/>for 3+ consecutive checks</td>
-      <td>Native macOS notification<br/>with process name, PID,<br/>and CPU percentage</td>
-      <td>Click the notification<br/>to kill the process.<br/>Re-notifies every 5 min</td>
+      <td>Samples CPU every 60s<br/>Flags anything above 80%<br/>for ~15 min straight</td>
+      <td>One native macOS notification<br/>per episode, with process<br/>name, PID, and CPU percentage</td>
+      <td>Click the notification<br/>to kill the process</td>
     </tr>
   </table>
 </div>
 <br />
 
-System processes (`WindowServer`, `mds`, `launchd`, etc.) are automatically ignored.
+System processes (`WindowServer`, `mds`, `launchd`, etc.) are automatically ignored, as is anything started by a coding agent (`claude`, `codex`, `cursor-agent`). A process an agent leaves behind after it exits still alerts.
 
 ## Requirements
 
@@ -72,8 +72,8 @@ Edit the top of [`heatstroke.sh`](heatstroke.sh):
 | Variable | Default | Description |
 |---|---|---|
 | `CPU_THRESHOLD` | `80` | % CPU to consider "high" |
-| `NOTIFY_AFTER` | `3` | Consecutive checks before first notification (~3 min) |
-| `RE_NOTIFY_INTERVAL` | `5` | Re-notify every N checks if still hot (~5 min) |
+| `NOTIFY_AFTER` | `15` | Hot checks before the episode's one notification (~15 min) |
+| `COOL_READINGS_TOLERATED` | `1` | Cool checks in a row that don't end an episode |
 
 Then `make restart`.
 
@@ -84,4 +84,4 @@ make log
 # ~/.local/state/heatstroke/watchdog.log
 ```
 
-Auto-rotated at 1MB. Entries include `NOTIFY`, `RE-NOTIFY`, and `RESOLVED` events.
+Auto-rotated at 1MB. Entries include `NOTIFY` (with the process's parent chain), `RESOLVED`, and `CLICKED` events.

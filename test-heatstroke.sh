@@ -98,6 +98,10 @@ MOCK_PS_HEADER
   cat > "$TEST_DIR/bin/terminal-notifier" << 'EOF'
 #!/bin/bash
 echo "NOTIFICATION: $@" >> "${HOME}/.local/state/heatstroke/notifications.log"
+while [[ $# -gt 0 ]]; do
+  [[ "$1" == "-execute" ]] && printf '%s' "$2" > "${HOME}/.local/state/heatstroke/click-action"
+  shift
+done
 EOF
   chmod +x "$TEST_DIR/bin/terminal-notifier"
 
@@ -480,6 +484,35 @@ assert_contains "Alert for an editor extension's process" "$notifs" "biome (PID 
 
 log=$(get_log)
 assert_contains "NOTIFY logs the parent chain" "$log" "NOTIFY: biome (PID 962) at 99.0% CPU for ~15 min; parents: Cursor Helper (Plugin)(961) < Cursor(960)"
+
+
+# ============================================================
+# TEST 17: Clicking the notification kills the process and logs the click
+# ============================================================
+setup_test "Click kills the process and logs it"
+
+sleep 60 &
+victim_pid=$!
+
+for i in $(seq 1 15); do
+  run_watchdog "  PID  PPID  %CPU COMM
+${victim_pid}     1  99.0 /bin/sleep"
+done
+
+PATH="/usr/bin:/bin" sh -c "$(cat "$STATE_DIR/click-action")"
+sleep 0.5
+
+victim_stat=$(ps -p "$victim_pid" -o stat= 2>/dev/null | tr -d ' ' || true)
+if [[ -z "$victim_stat" || "$victim_stat" == Z* ]]; then
+  pass "Process killed on click"
+else
+  fail "Process still running after click (stat=$victim_stat)"
+  kill "$victim_pid" 2>/dev/null || true
+fi
+wait "$victim_pid" 2>/dev/null || true
+
+log=$(get_log)
+assert_contains "Click logged" "$log" "CLICKED: sleep (PID ${victim_pid})"
 
 
 # ============================================================

@@ -181,16 +181,18 @@ send_notification() {
   local pid="$1" name="$2" cpu="$3" duration_min="$4"
 
   # Name is already sanitized at collection time (alphanumeric, dash, underscore, dot, space only)
+  # Verify process name still matches before killing to guard against PID reuse
+  local click_action="bash -c 'echo \"\$(date +%F\\ %T) CLICKED: ${name} (PID ${pid})\" >> \"${LOG_FILE}\"; cur=\$(ps -p ${pid} -o comm= 2>/dev/null); [[ \"\${cur##*/}\" == \"${name}\" ]] && kill ${pid}'"
+
   # Use our bundled Heatstroke.app (a rebranded terminal-notifier) so
   # notifications show the custom icon and "Heatstroke" app name.
   local notifier="${HOME}/Applications/Heatstroke.app/Contents/MacOS/terminal-notifier"
   if [[ -x "$notifier" ]]; then
-    # Verify process name still matches before killing to guard against PID reuse
     "$notifier" \
       -title "Heatstroke" \
       -subtitle "${name} (PID ${pid}) — ${cpu}% CPU" \
       -message "High CPU for ~${duration_min} min. Click to kill." \
-      -execute "bash -c 'cur=\$(ps -p ${pid} -o comm= 2>/dev/null); [[ \"\${cur##*/}\" == \"${name}\" ]] && kill ${pid}'" \
+      -execute "$click_action" \
       -group "heatstroke-${pid}" \
       -sound default \
       2>/dev/null || true
@@ -199,7 +201,7 @@ send_notification() {
       -title "Heatstroke" \
       -subtitle "${name} (PID ${pid}) — ${cpu}% CPU" \
       -message "High CPU for ~${duration_min} min. Click to kill." \
-      -execute "bash -c 'cur=\$(ps -p ${pid} -o comm= 2>/dev/null); [[ \"\${cur##*/}\" == \"${name}\" ]] && kill ${pid}'" \
+      -execute "$click_action" \
       -group "heatstroke-${pid}" \
       -sound default \
       2>/dev/null || true
