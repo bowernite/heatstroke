@@ -195,7 +195,7 @@ send_notification() {
       -execute "$click_action" \
       -group "heatstroke-${pid}" \
       -sound default \
-      2>/dev/null || true
+      </dev/null 2>/dev/null || true
   elif command -v terminal-notifier &>/dev/null; then
     terminal-notifier \
       -title "Heatstroke" \
@@ -204,7 +204,7 @@ send_notification() {
       -execute "$click_action" \
       -group "heatstroke-${pid}" \
       -sound default \
-      2>/dev/null || true
+      </dev/null 2>/dev/null || true
   else
     osascript -e "display notification \"${name} (PID ${pid}) at ${cpu}% for ~${duration_min} min\" with title \"Heatstroke\"" 2>/dev/null || true
   fi
@@ -331,11 +331,12 @@ if [[ -n "$prev_state" ]]; then
 
     if [[ "$prev_count" -ge "$NOTIFY_AFTER" ]]; then
       log "RESOLVED: ${prev_name} (PID ${pid}) dropped below threshold after ~${prev_count} min"
+      # </dev/null: terminal-notifier posts piped stdin (here, the loop's remaining state lines) as a notification
       notifier="${HOME}/Applications/Heatstroke.app/Contents/MacOS/terminal-notifier"
       if [[ -x "$notifier" ]]; then
-        "$notifier" -remove "heatstroke-${pid}" 2>/dev/null || true
+        "$notifier" -remove "heatstroke-${pid}" </dev/null 2>/dev/null || true
       elif command -v terminal-notifier &>/dev/null; then
-        terminal-notifier -remove "heatstroke-${pid}" 2>/dev/null || true
+        terminal-notifier -remove "heatstroke-${pid}" </dev/null 2>/dev/null || true
       fi
     fi
   done <<< "$prev_state"

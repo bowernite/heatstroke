@@ -94,14 +94,21 @@ MOCK_PS_HEADER
   echo "ENDOFPS" >> "$TEST_DIR/bin/ps"
   chmod +x "$TEST_DIR/bin/ps"
 
-  # Create a mock terminal-notifier that logs calls
+  # Create a mock terminal-notifier that logs calls. Like the real one, it posts
+  # piped stdin as the message when no -message is given.
   cat > "$TEST_DIR/bin/terminal-notifier" << 'EOF'
 #!/bin/bash
 echo "NOTIFICATION: $@" >> "${HOME}/.local/state/heatstroke/notifications.log"
+has_message=false
 while [[ $# -gt 0 ]]; do
+  [[ "$1" == "-message" ]] && has_message=true
   [[ "$1" == "-execute" ]] && printf '%s' "$2" > "${HOME}/.local/state/heatstroke/click-action"
   shift
 done
+if ! $has_message && [[ ! -t 0 ]]; then
+  stdin_message=$(cat)
+  [[ -n "$stdin_message" ]] && echo "NOTIFICATION FROM STDIN: $stdin_message" >> "${HOME}/.local/state/heatstroke/notifications.log"
+fi
 EOF
   chmod +x "$TEST_DIR/bin/terminal-notifier"
 
@@ -287,6 +294,26 @@ done
 notifs=$(get_notifications)
 notif_count=$(echo "$notifs" | grep -c "NOTIFICATION:" || true)
 assert_eq "No second notification after another dip" "1" "$notif_count"
+
+
+# ============================================================
+# TEST 6c: Resolving one process leaves the others alone
+# ============================================================
+setup_test "Resolving one process leaves the others alone"
+
+mkdir -p "$STATE_DIR"
+printf '%s' "12345 15 1 MyApp
+77983 3 0 OtherApp" > "$STATE_FILE"
+
+run_watchdog "  PID  PPID  %CPU COMM
+12345     1   5.0 /Applications/MyApp.app/Contents/MacOS/MyApp
+77983     1   5.0 /Applications/OtherApp.app/Contents/MacOS/OtherApp"
+
+notifs=$(get_notifications)
+assert_contains "Resolved alert removed" "$notifs" "-remove heatstroke-12345"
+assert_not_contains "No stray notification of state lines" "$notifs" "FROM STDIN"
+state=$(get_state)
+assert_eq "Other process still tracked through its dip" "77983 3 1 OtherApp" "$state"
 
 
 # ============================================================
