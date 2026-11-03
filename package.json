@@ -1,0 +1,10 @@
+{
+  "name": "pr-push-smoke",
+  "private": true,
+  "scripts": {
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.3.3"
+  }
+}

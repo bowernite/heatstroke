@@ -2,3 +2,4 @@ com.user.heatstroke.plist
 Heatstroke.app/
 
 .archive/
+node_modules/

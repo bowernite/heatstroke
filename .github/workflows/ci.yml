@@ -1,0 +1,9 @@
+name: ci
+on: pull_request
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install --no-package-lock
+      - run: npx prettier --check smoke.json package.json
