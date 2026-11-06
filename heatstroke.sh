@@ -14,6 +14,7 @@ set -euo pipefail
 CPU_THRESHOLD=80        # % CPU (ps decaying average) to consider "high"
 NOTIFY_AFTER=15         # hot checks before the episode's one notification (~15 min)
 COOL_READINGS_TOLERATED=1  # cool checks in a row that don't end an episode
+PROC_COUNT_WARN=${HEATSTROKE_PROC_COUNT_WARN:-2500}  # total processes at which each check logs a PROCS line (normal is ~1000-1500)
 # Use per-user state dir to avoid symlink attacks in world-writable /tmp
 STATE_DIR="${HOME}/.local/state/heatstroke"
 mkdir -p "$STATE_DIR"
@@ -340,6 +341,29 @@ if [[ -n "$prev_state" ]]; then
       fi
     fi
   done <<< "$prev_state"
+fi
+
+# --- Process-count spikes ---
+# A fork loop starves the whole user (every fork then fails with EAGAIN) long before any one process runs hot,
+# so record the culprit while it's still running: the busiest parent and busiest command.
+proc_total=$(echo "$process_snapshot" | awk 'NR > 1' | wc -l | tr -d ' ')
+if [[ "$proc_total" -ge "$PROC_COUNT_WARN" ]]; then
+  proc_limit=$(sysctl -n kern.maxprocperuid 2>/dev/null || echo "?")
+  proc_top=$(echo "$process_snapshot" | awk '
+    NR > 1 {
+      comm = $0
+      sub(/^ *[0-9]+ +[0-9]+ +[0-9.]+ +/, "", comm)
+      sub(/.*\//, "", comm)
+      name[$1] = comm
+      kids[$2]++
+      same[comm]++
+    }
+    END {
+      for (p in kids) if (kids[p] > kmax) { kmax = kids[p]; kp = p }
+      for (c in same) if (same[c] > smax) { smax = same[c]; sc = c }
+      printf "busiest parent %s(%s) has %d children; most common command %s x%d", name[kp], kp, kmax, sc, smax
+    }')
+  log "PROCS: ${proc_total} running (per-user limit ${proc_limit}); ${proc_top}"
 fi
 
 # --- Write new state (atomic) ---

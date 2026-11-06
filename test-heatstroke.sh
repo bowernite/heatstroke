@@ -543,6 +543,30 @@ assert_contains "Click logged" "$log" "CLICKED: sleep (PID ${victim_pid})"
 
 
 # ============================================================
+# TEST: A process-count spike logs the parent forking them
+# ============================================================
+setup_test "Process-count spike names the busiest parent"
+
+fork_loop_ps="  PID  PPID  %CPU COMM
+    1     1   0.0 /sbin/launchd
+  900     1   0.1 /usr/bin/bash"
+for i in $(seq 1000 1009); do
+  fork_loop_ps="$fork_loop_ps
+$i   900   0.0 /Applications/cmux.app/Contents/Resources/bin/cmux"
+done
+
+HEATSTROKE_PROC_COUNT_WARN=10 run_watchdog "$fork_loop_ps"
+log=$(get_log)
+assert_contains "PROCS line has the total" "$log" "PROCS: 12 running"
+assert_contains "PROCS line names the busiest parent" "$log" "busiest parent bash(900) has 10 children"
+assert_contains "PROCS line names the most common command" "$log" "most common command cmux x10"
+
+setup_test "Normal process count logs nothing"
+run_watchdog "$fork_loop_ps"
+assert_not_contains "No PROCS line below the threshold" "$(get_log)" "PROCS:"
+
+
+# ============================================================
 # RESULTS
 # ============================================================
 echo ""
